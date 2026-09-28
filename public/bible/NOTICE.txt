@@ -1,0 +1,6 @@
+World English Bible Classic (WEB), 66-book Old and New Testament subset.
+Source: https://ebible.org/Scriptures/eng-web_usfx.zip, retrieved 2026-09-28.
+The World English Bible is in the public domain. World English Bible is a trademark of eBible.org.
+https://ebible.org/eng-web/copyright.htm
+Verse wording is preserved; XML markup, headings, footnotes and cross-references are omitted and whitespace is normalized.
+The source USFX SHA-256 is recorded in web.json. scripts/build-bible.py reproduces this conversion.
