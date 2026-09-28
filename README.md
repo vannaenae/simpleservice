@@ -1,6 +1,6 @@
 # Simple Service
 
-A calm, colourful worship presentation workspace. Prepare songs, arrange a service, and send lyrics to a separate audience display.
+A calm, colourful worship presentation workspace. Listen for Bible references with local AI, prepare songs, arrange a service, and send verses or lyrics to a separate audience display.
 
 ![Simple Service workspace](docs/screenshots/workspace.png)
 
@@ -22,7 +22,28 @@ npm run build     # production files in dist/
 npm run preview   # inspect a production build locally
 ```
 
-The production build is a static site; serve `dist/` over HTTPS or localhost. Relative asset paths support deployment under a repository subdirectory. Fonts are bundled locally. This version is a web application, not a native desktop installer.
+The frontend can be served as a static site; the local Scripture microphone requires the companion below. Relative asset paths support deployment under a repository subdirectory. Fonts are bundled locally. This version is a web application, not a native desktop installer.
+
+## Local Scripture AI
+
+One-time setup downloads the pinned whisper.cpp engine and quantized English `small.en` model (~190 MB). Requires Git, a C++ compiler (Xcode command-line tools on macOS), and CMake; the setup script can install CMake into a private Python virtual environment if Python 3 is available.
+
+```sh
+npm run setup:local-ai
+npm run local-ai
+# In another terminal:
+npm run dev
+```
+
+For a single production process, run `npm run build` then `npm run start:local`, and open http://127.0.0.1:8787. Keep this process running during the service. The helper binds only to loopback. No API key or cloud AI subscription is required. Setup needs internet; Scripture listening and the bundled Bible work offline afterwards.
+
+Choose **Scripture → Start local listening** and allow the microphone. Select your microphone or sound-desk audio input. Say “John chapter three and verse sixteen”, “Romans eight twenty-eight”, or “next verse”. The first audio window is three seconds, with a new overlapping window every two seconds, plus model processing time. Slow machines skip windows rather than accumulate a delayed queue. A split chapter/verse retains short-lived context; overlapping repeated words are removed before relative commands run.
+
+Exact spoken references automatically select the verse in preview when Auto-preview is enabled. Quotations are ranked for operator selection. **Send live** presents the selected verse; detected speech does not automatically change the audience screen. Switching to Songs or leaving the page stops Scripture listening.
+
+The engine uses local Whisper transcription, deterministic reference parsing, and indexed quotation matching across 31,098 World English Bible verses. This is not semantic paraphrase detection, a language-model inference of verses, or an NDI integration. Speech accuracy depends on audio quality, accent and hardware; verify the preview before presenting. The prominent preview heading includes both chapter and verse.
+
+Audio is processed in memory on this computer and is not saved. Transcripts and suggestions are session-only. The bundled public-domain Bible attribution is in `public/bible/NOTICE.txt`. This architecture is informed by Rhema’s local transcription workflow, with an independently implemented UI and matching pipeline.
 
 ## What works
 
@@ -97,7 +118,7 @@ JSON example:
 
 CCLI song numbers and your church licence number are metadata, not authentication. Simple Service does not verify a licence, connect to the SongSelect catalogue, scrape lyrics, or report song usage. Use [SongSelect](https://songselect.ccli.com/) separately and import lyrics you are authorised to use. Starter songs use traditional texts rather than contemporary copyrighted arrangements.
 
-Voice matching uses the browser's optional SpeechRecognition API. Availability, microphone permissions, internet connectivity and recognition quality depend on the browser/provider. Starting the microphone may send audio to the browser provider for processing. There is no app audio-recording store or recognition backend. This is **lyric matching, not melody or audio-fingerprint recognition**; speech usually works better than singing. The displayed percentage is word overlap, not a calibrated probability. Typed lyrics work without microphone access.
+The separate **Songs** voice-matching feature uses the browser's optional SpeechRecognition API. Availability, microphone permissions, internet connectivity and recognition quality depend on the browser/provider. Starting the microphone may send audio to the browser provider for processing. This song feature does not use the local Scripture engine. This is **lyric matching, not melody or audio-fingerprint recognition**; speech usually works better than singing. The displayed percentage is word overlap, not a calibrated probability. Typed lyrics work without microphone access.
 
 ## Storage and privacy
 

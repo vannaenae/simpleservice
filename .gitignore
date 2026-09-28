@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 .playwright-cli/
 output/
+.local-ai/

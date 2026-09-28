@@ -1,3 +1,5 @@
+import ScripturePanel from "./ScripturePanel";
+import type { BibleIndex, BibleVerse } from "./scripture";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
@@ -182,6 +184,23 @@ const themes: { id: Theme; name: string; description: string }[] = [
   { id: "ink", name: "Simply black", description: "Minimal" },
 ];
 export default function App() {
+  const [mode, setMode] = useState<"scripture" | "songs">("scripture");
+  const [scriptureSong, setScriptureSong] = useState<Song | null>(null);
+  function loadScripture(verse: BibleVerse, bible: BibleIndex) {
+    const chapter = bible.verses.filter(
+      (v) => v.book === verse.book && v.chapter === verse.chapter,
+    );
+    setScriptureSong({
+      id: `scripture:${verse.book}:${verse.chapter}`,
+      title: `${bible.books[verse.book]} ${verse.chapter}`,
+      author: "World English Bible",
+      source: "Scripture",
+      ccli: "",
+      copyright: "World English Bible · Public domain",
+      slides: chapter.map((v) => ({ label: v.reference, text: v.text })),
+    });
+    setSlide(chapter.findIndex((v) => v.verse === verse.verse));
+  }
   const [songs, setSongs] = useState<Song[]>(loadSongs);
   const [selected, setSelected] = useState(() => loadSongs()[0].id);
   const [slide, setSlide] = useState(0);
@@ -211,10 +230,14 @@ export default function App() {
   const channel = useRef<BroadcastChannel | null>(null);
   const latest = useRef(output);
   latest.current = { ...output, settings };
-  const song = songs.find((x) => x.id === selected) || songs[0];
+  const song =
+    mode === "scripture" && scriptureSong
+      ? scriptureSong
+      : songs.find((x) => x.id === selected) || songs[0];
+  const isScripture = song.source === "Scripture";
   const currentSlide = Math.min(slide, song.slides.length - 1);
   const preview: Output = {
-    title: song.title,
+    title: isScripture ? song.slides[currentSlide].label : song.title,
     slide: song.slides[currentSlide],
     next: song.slides[currentSlide + 1],
     index: currentSlide,
@@ -275,6 +298,8 @@ export default function App() {
     });
   }, [output, settings]);
   function choose(s: Song) {
+    setMode(s.source === "Scripture" ? "scripture" : "songs");
+    if (s.source === "Scripture") setScriptureSong(s);
     setSelected(s.id);
     setSlide(0);
   }
@@ -283,6 +308,7 @@ export default function App() {
     setSlide(i);
     setOutput({
       ...preview,
+      title: isScripture ? song.slides[i].label : song.title,
       slide: song.slides[i],
       next: song.slides[i + 1],
       index: i,
@@ -347,6 +373,7 @@ export default function App() {
   }
   const filtered = songs.filter(
     (s) =>
+      s.source !== "Scripture" &&
       (filter === "All songs" ||
         (filter === "Public domain"
           ? s.source === "Public domain"
@@ -359,6 +386,22 @@ export default function App() {
     .map((id) => songs.find((s) => s.id === id))
     .filter((x): x is Song => !!x);
   function addToPlan() {
+    if (isScripture) {
+      const item = {
+        ...song,
+        id: `scripture:${preview.title}`,
+        title: preview.title,
+        slides: [preview.slide],
+      };
+      if (plan.includes(item.id)) {
+        notify("This passage is already in your service.");
+        return;
+      }
+      if (!songs.some((s) => s.id === item.id)) setSongs([...songs, item]);
+      setPlan([...plan, item.id]);
+      notify(`${item.title} added to your service.`);
+      return;
+    }
     if (plan.includes(song.id)) {
       notify("This song is already in your service.");
       return;
@@ -381,6 +424,7 @@ export default function App() {
           )
         : [...existing, saved],
     );
+    setMode("songs");
     setSelected(editing?.id || saved.id);
     setSlide(0);
     setModal(null);
@@ -391,7 +435,9 @@ export default function App() {
     );
   }
   return (
-    <div className={`app ${dark ? "dark" : ""}`}>
+    <div
+      className={`app ${dark ? "dark" : ""} ${mode === "scripture" ? "scripture-mode" : ""}`}
+    >
       <aside className="rail">
         <a className="brand-mark" href="./" aria-label="Simple Service home">
           <Sun size={28} />
@@ -413,7 +459,13 @@ export default function App() {
             className="rail-button"
             title="Song library"
             aria-label="Song library"
-            onClick={() => document.getElementById("song-search")?.focus()}
+            onClick={() => {
+              setMode("songs");
+              setTimeout(
+                () => document.getElementById("song-search")?.focus(),
+                0,
+              );
+            }}
           >
             <BookOpen />
           </button>
@@ -486,9 +538,16 @@ export default function App() {
                 <span /> MAKE ROOM FOR THE MOMENT
               </div>
               <h1>
-                Less setup. More worship<span>.</span>
+                {mode === "scripture"
+                  ? "Hear the Word. Have it ready"
+                  : "Less setup. More worship"}
+                <span>.</span>
               </h1>
-              <p>Your songs, your service, one beautifully simple space.</p>
+              <p>
+                {mode === "scripture"
+                  ? "Local listening, Scripture detection, and a clear path to the screen."
+                  : "Your songs, your service, one beautifully simple space."}
+              </p>
             </div>
             <button
               className="detect-button"
@@ -519,7 +578,7 @@ export default function App() {
                   maxLength={80}
                 />
                 <span>
-                  {planned.length} songs in your service <b>·</b> Ready when you
+                  {planned.length} items in your service <b>·</b> Ready when you
                   are
                 </span>
               </div>
@@ -536,215 +595,280 @@ export default function App() {
               </button>
             </div>
           </section>
-          <div className="workspace-grid">
-            <section className="panel library-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>
-                    Song library <span className="count">{songs.length}</span>
-                  </h2>
-                  <p>A home for every song.</p>
-                </div>
-                <button
-                  className="icon-button bordered"
-                  aria-label="Create a song"
-                  onClick={() => {
-                    setEditing(null);
-                    setModal("song");
-                  }}
-                >
-                  <Plus size={18} />
-                </button>
-              </div>
-              <div className="search-field">
-                <Search size={17} />
-                <input
-                  id="song-search"
-                  placeholder="Search songs, lyrics, CCLI…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                {query && (
-                  <button
-                    className="icon-button"
-                    aria-label="Clear search"
-                    onClick={() => setQuery("")}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-              <div className="filter-row">
-                {["All songs", "Public domain", "Imported"].map((f) => (
-                  <button
-                    key={f}
-                    className={filter === f ? "selected" : ""}
-                    onClick={() => setFilter(f)}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-              <div className="song-list">
-                {filtered.map((s, i) => (
-                  <button
-                    key={s.id}
-                    className={`song-row ${song.id === s.id ? "selected" : ""}`}
-                    onClick={() => choose(s)}
-                  >
-                    <span className={`song-icon color-${i % 4}`}>
-                      <Music2 size={19} />
-                    </span>
-                    <span className="song-info">
-                      <strong>{s.title}</strong>
-                      <small>{s.author || "Your song library"}</small>
-                      <span className="source-label">
-                        {s.source === "Public domain"
-                          ? "PUBLIC DOMAIN"
-                          : s.ccli
-                            ? `CCLI #${s.ccli}`
-                            : s.source.toUpperCase()}
+          <div
+            className="workspace-modes"
+            role="group"
+            aria-label="Workspace mode"
+          >
+            <button
+              className={mode === "scripture" ? "active" : ""}
+              onClick={() => {
+                setMode("scripture");
+                setSlide(0);
+              }}
+            >
+              <BookOpen size={17} /> Scripture <span>LOCAL AI</span>
+            </button>
+            <button
+              className={mode === "songs" ? "active" : ""}
+              onClick={() => {
+                setMode("songs");
+                setSlide(0);
+              }}
+            >
+              <Music2 size={17} /> Songs
+            </button>
+            <p>
+              {mode === "scripture"
+                ? "Hear the reference. Have the verse ready."
+                : "Your familiar songs, ready for worship."}
+            </p>
+          </div>
+          <div
+            className={`workspace-grid ${mode === "scripture" ? "scripture-workspace" : ""}`}
+          >
+            {mode === "scripture" ? (
+              <ScripturePanel
+                onPreview={loadScripture}
+                onBibleReady={(b) => {
+                  if (!scriptureSong) {
+                    const verse = b.get(42, 3, 16);
+                    if (verse) loadScripture(verse, b);
+                  }
+                }}
+              />
+            ) : (
+              <section className="panel library-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>
+                      Song library{" "}
+                      <span className="count">
+                        {songs.filter((s) => s.source !== "Scripture").length}
                       </span>
-                    </span>
-                    {song.id === s.id && <span className="selected-dot" />}
+                    </h2>
+                    <p>A home for every song.</p>
+                  </div>
+                  <button
+                    className="icon-button bordered"
+                    aria-label="Create a song"
+                    onClick={() => {
+                      setEditing(null);
+                      setModal("song");
+                    }}
+                  >
+                    <Plus size={18} />
                   </button>
-                ))}
-                {!filtered.length && (
-                  <div className="empty">
-                    <Search />
-                    <h3>No songs found</h3>
-                    <p>Try a lyric, a different title, or import a song.</p>
+                </div>
+                <div className="search-field">
+                  <Search size={17} />
+                  <input
+                    id="song-search"
+                    placeholder="Search songs, lyrics, CCLI…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  {query && (
                     <button
-                      className="text-button"
+                      className="icon-button"
+                      aria-label="Clear search"
                       onClick={() => setQuery("")}
                     >
-                      Clear search
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <div className="filter-row">
+                  {["All songs", "Public domain", "Imported"].map((f) => (
+                    <button
+                      key={f}
+                      className={filter === f ? "selected" : ""}
+                      onClick={() => setFilter(f)}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <div className="song-list">
+                  {filtered.map((s, i) => (
+                    <button
+                      key={s.id}
+                      className={`song-row ${song.id === s.id ? "selected" : ""}`}
+                      onClick={() => choose(s)}
+                    >
+                      <span className={`song-icon color-${i % 4}`}>
+                        <Music2 size={19} />
+                      </span>
+                      <span className="song-info">
+                        <strong>{s.title}</strong>
+                        <small>{s.author || "Your song library"}</small>
+                        <span className="source-label">
+                          {s.source === "Public domain"
+                            ? "PUBLIC DOMAIN"
+                            : s.ccli
+                              ? `CCLI #${s.ccli}`
+                              : s.source.toUpperCase()}
+                        </span>
+                      </span>
+                      {song.id === s.id && <span className="selected-dot" />}
+                    </button>
+                  ))}
+                  {!filtered.length && (
+                    <div className="empty">
+                      <Search />
+                      <h3>No songs found</h3>
+                      <p>Try a lyric, a different title, or import a song.</p>
+                      <button
+                        className="text-button"
+                        onClick={() => setQuery("")}
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="library-footer">
+                  <button
+                    className="secondary full"
+                    onClick={() => setModal("import")}
+                  >
+                    <Upload size={16} /> Import songs
+                  </button>
+                  <p>Bring the songs you already love.</p>
+                </div>
+                <div className="tip-card">
+                  <span>
+                    <Sparkles size={18} />
+                  </span>
+                  <div>
+                    <strong>A little help finding the words</strong>
+                    <p>Speak or type a lyric to find a song in your library.</p>
+                    <button onClick={() => setModal("detect")}>
+                      Try song matching <ArrowUpRight size={14} />
                     </button>
                   </div>
-                )}
-              </div>
-              <div className="library-footer">
-                <button
-                  className="secondary full"
-                  onClick={() => setModal("import")}
-                >
-                  <Upload size={16} /> Import songs
-                </button>
-                <p>Bring the songs you already love.</p>
-              </div>
-              <div className="tip-card">
-                <span>
-                  <Sparkles size={18} />
-                </span>
-                <div>
-                  <strong>A little help finding the words</strong>
-                  <p>Speak or type a lyric to find a song in your library.</p>
-                  <button onClick={() => setModal("detect")}>
-                    Try song matching <ArrowUpRight size={14} />
-                  </button>
                 </div>
-              </div>
-            </section>
-            <section className="panel editor-panel">
-              <div className="panel-heading">
-                <div>
-                  <div className="eyebrow muted">SONG WORKSPACE</div>
-                  <h2 className="song-title">{song.title}</h2>
-                  <p>
-                    {song.author || "Your song"} <span>·</span>{" "}
-                    {song.slides.length} slides
-                  </p>
-                </div>
-                <button
-                  className="icon-button bordered"
-                  aria-label="Edit selected song"
-                  onClick={() => {
-                    setEditing(song);
-                    setModal("song");
-                  }}
-                >
-                  <Edit3 size={17} />
-                </button>
-              </div>
-              <div className="preview-label">
-                <span>
-                  <i /> PREVIEW
-                </span>
-                <span>
-                  {settings.ratio.replace(" / ", ":")} <b>·</b>{" "}
-                  {song.slides[currentSlide].label}
-                </span>
-              </div>
-              <Surface output={preview} preview />
-              <div className="preview-controls">
-                <div className="step-controls">
-                  <button
-                    className="icon-button bordered"
-                    aria-label="Previous slide"
-                    disabled={currentSlide === 0}
-                    onClick={() => step(-1)}
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <span>
-                    {currentSlide + 1} <em>/ {song.slides.length}</em>
-                  </span>
-                  <button
-                    className="icon-button bordered"
-                    aria-label="Next slide"
-                    disabled={currentSlide === song.slides.length - 1}
-                    onClick={() => step(1)}
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-                <button
-                  className="primary live-button"
-                  onClick={() => goLive()}
-                >
-                  <Radio size={16} /> Send live <kbd>↵</kbd>
-                </button>
-              </div>
-              <div className="slides-heading">
-                <h3>Song slides</h3>
-                <span>Select to preview · Enter to present</span>
-              </div>
-              <div className="slide-grid">
-                {song.slides.map((s, i) => (
-                  <button
-                    key={i}
-                    className={`slide-card ${i === currentSlide ? "selected" : ""}`}
-                    onClick={() => setSlide(i)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        goLive(i);
-                      }
-                    }}
-                    onDoubleClick={() => goLive(i)}
-                  >
-                    <div>
-                      <span>{String(i + 1).padStart(2, "0")}</span>
-                      <strong>{s.label}</strong>
-                      {i === currentSlide && <Check size={14} />}
+              </section>
+            )}
+            {mode === "scripture" && !scriptureSong ? (
+              <section className="panel empty">
+                <BookOpen />
+                <h3>Opening your local Bible…</h3>
+              </section>
+            ) : (
+              <section className="panel editor-panel">
+                <div className="panel-heading">
+                  <div>
+                    <div className="eyebrow muted">
+                      {isScripture
+                        ? "SCRIPTURE PREVIEW · WEB"
+                        : "SONG WORKSPACE"}
                     </div>
-                    <p>{s.text}</p>
+                    <h2 className="song-title">{isScripture ? preview.title : song.title}</h2>
+                    <p>
+                      {song.author || "Your song"} <span>·</span>{" "}
+                      {song.slides.length}{" "}
+                      {isScripture ? "verses in this chapter" : "slides"}
+                    </p>
+                  </div>
+                  <button
+                    className="icon-button bordered"
+                    disabled={isScripture}
+                    aria-label={
+                      isScripture
+                        ? "Bible text is read-only"
+                        : "Edit selected song"
+                    }
+                    onClick={() => {
+                      setEditing(song);
+                      setModal("song");
+                    }}
+                  >
+                    <Edit3 size={17} />
                   </button>
-                ))}
-              </div>
-              <div className="editor-bottom">
-                <span>
-                  <Check size={14} />{" "}
-                  {song.source === "Public domain"
-                    ? "Traditional public-domain lyrics"
-                    : "Imported to your local library"}
-                </span>
-                <button className="text-button" onClick={addToPlan}>
-                  <Plus size={15} /> Add to service
-                </button>
-              </div>
-            </section>
+                </div>
+                <div className="preview-label">
+                  <span>
+                    <i /> PREVIEW
+                  </span>
+                  <span>
+                    {settings.ratio.replace(" / ", ":")} <b>·</b>{" "}
+                    {song.slides[currentSlide].label}
+                  </span>
+                </div>
+                <Surface output={preview} preview />
+                <div className="preview-controls">
+                  <div className="step-controls">
+                    <button
+                      className="icon-button bordered"
+                      aria-label="Previous slide"
+                      disabled={currentSlide === 0}
+                      onClick={() => step(-1)}
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <span>
+                      {currentSlide + 1} <em>/ {song.slides.length}</em>
+                    </span>
+                    <button
+                      className="icon-button bordered"
+                      aria-label="Next slide"
+                      disabled={currentSlide === song.slides.length - 1}
+                      onClick={() => step(1)}
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                  <button
+                    className="primary live-button"
+                    onClick={() => goLive()}
+                  >
+                    <Radio size={16} /> Send live <kbd>↵</kbd>
+                  </button>
+                </div>
+                <div className="slides-heading">
+                  <h3>{isScripture ? "Chapter verses" : "Song slides"}</h3>
+                  <span>Select to preview · Enter to present</span>
+                </div>
+                <div className="slide-grid">
+                  {song.slides.map((s, i) => (
+                    <button
+                      key={i}
+                      className={`slide-card ${i === currentSlide ? "selected" : ""}`}
+                      onClick={() => setSlide(i)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          goLive(i);
+                        }
+                      }}
+                      onDoubleClick={() => goLive(i)}
+                    >
+                      <div>
+                        <span>{String(i + 1).padStart(2, "0")}</span>
+                        <strong>{s.label}</strong>
+                        {i === currentSlide && <Check size={14} />}
+                      </div>
+                      <p>{s.text}</p>
+                    </button>
+                  ))}
+                </div>
+                <div className="editor-bottom">
+                  <span>
+                    <Check size={14} />{" "}
+                    {isScripture
+                      ? "WEB · Public domain"
+                      : song.source === "Public domain"
+                        ? "Traditional public-domain lyrics"
+                        : "Imported to your local library"}
+                  </span>
+                  <button className="text-button" onClick={addToPlan}>
+                    <Plus size={15} /> Add to service
+                  </button>
+                </div>
+              </section>
+            )}
             <aside className="right-column">
               <section className="panel plan-panel">
                 <div className="tabs">
@@ -785,7 +909,12 @@ export default function App() {
                             </span>
                             <span>
                               <strong>{s.title}</strong>
-                              <small>{s.slides.length} slides · Song</small>
+                              <small>
+                                {s.slides.length}{" "}
+                                {s.source === "Scripture"
+                                  ? "verse · Scripture"
+                                  : "slides · Song"}
+                              </small>
                             </span>
                           </button>
                           <div className="plan-item-actions">
@@ -825,7 +954,8 @@ export default function App() {
                       )}
                     </div>
                     <button className="add-plan" onClick={addToPlan}>
-                      <Plus size={15} /> Add selected song
+                      <Plus size={15} />{" "}
+                      {isScripture ? "Add selected verse" : "Add selected song"}
                     </button>
                     <div className="plan-note">
                       <span /> Space for the spontaneous.
